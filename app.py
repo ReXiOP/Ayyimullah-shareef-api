@@ -305,11 +305,17 @@ app = FastAPI(title="Ayyimullah Shareef API")
 
 # Mount static files
 # Ensure api/static exists or create it
-if not os.path.exists("api/static"):
-    os.makedirs("api/static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="api/static"), name="static")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(base_dir, "api", "static")
+if not os.path.exists(static_dir):
+    os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-templates = Jinja2Templates(directory="api/templates")
+# Fix template directory for Vercel
+# Vercel might change the working directory, so we need to be robust
+base_dir = os.path.dirname(os.path.abspath(__file__))
+templates_dir = os.path.join(base_dir, "api", "templates")
+templates = Jinja2Templates(directory=templates_dir)
 
 # --- Routers ---
 
@@ -474,8 +480,8 @@ def startup_event():
         if db.query(Month).count() == 0:
             print("Seeding database...")
             # Use absolute path relative to this file
-            # Since app.py is in root, file.json is in root
-            file_path = "file.json"
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            file_path = os.path.join(base_dir, "file.json")
             
             if not os.path.exists(file_path):
                 print(f"File {file_path} not found. CWD: {os.getcwd()}")
