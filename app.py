@@ -65,6 +65,15 @@ class Month(Base):
 
     events = relationship("Event", back_populates="month", cascade="all, delete-orphan")
 
+class EventDetail(Base):
+    __tablename__ = "event_details"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"))
+    detail = Column(Text)
+
+    event = relationship("Event", back_populates="details")
+
 class Event(Base):
     __tablename__ = "events"
 
@@ -74,15 +83,6 @@ class Event(Base):
 
     month = relationship("Month", back_populates="events")
     details = relationship("EventDetail", back_populates="event", cascade="all, delete-orphan")
-
-class EventDetail(Base):
-    __tablename__ = "event_details"
-
-    id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("events.id"))
-    detail = Column(Text)
-
-    event = relationship("Event", back_populates="details")
 
 # --- Schemas ---
 class EventDetailBase(BaseModel):
