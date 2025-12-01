@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from . import models, database, crud, schemas
 from .routers import admin, auth, dashboard, public
 
-models.Base.metadata.create_all(bind=database.engine)
+# models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(title="Ayyimullah Shareef API")
 
@@ -21,12 +21,18 @@ app.include_router(dashboard.router)
 def startup_event():
     db = database.SessionLocal()
     try:
+        # Create tables on startup
+        models.Base.metadata.create_all(bind=database.engine)
+        
         # Check if we have any data
         if db.query(models.Month).count() == 0:
             print("Seeding database...")
-            file_path = "file.json"
+            # Use absolute path relative to this file
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            file_path = os.path.join(base_dir, "file.json")
+            
             if not os.path.exists(file_path):
-                print(f"File {file_path} not found.")
+                print(f"File {file_path} not found. CWD: {os.getcwd()}")
                 return
             
             with open(file_path, "r", encoding="utf-8") as f:
@@ -48,8 +54,8 @@ def startup_event():
                 crud.create_month(db, month_create)
             
             # Create default admin user
-            admin_username = os.getenv("ADMIN_USERNAME", "admin")
-            admin_password = os.getenv("ADMIN_PASSWORD", "password123")
+            admin_username = os.getenv("ADMIN_USERNAME")
+            admin_password = os.getenv("ADMIN_PASSWORD")
             
             if not crud.get_user(db, admin_username):
                 crud.create_user(db, schemas.UserCreate(username=admin_username, password=admin_password))
