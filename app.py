@@ -104,7 +104,7 @@ class EventBase(BaseModel):
 class EventCreate(EventBase):
     details: List[str]
 
-class Event(EventBase):
+class EventSchema(EventBase):
     id: int
     month_id: int
     details: List[EventDetail] = []
@@ -119,9 +119,9 @@ class MonthBase(BaseModel):
 class MonthCreate(MonthBase):
     events: List[EventCreate] = []
 
-class Month(MonthBase):
+class MonthSchema(MonthBase):
     id: int
-    events: List[Event] = []
+    events: List[EventSchema] = []
 
     class Config:
         from_attributes = True
@@ -132,7 +132,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
-class User(UserBase):
+class UserSchema(UserBase):
     id: int
 
     class Config:
@@ -342,16 +342,16 @@ app.include_router(auth_router)
 # 2. Public Router
 public_router = APIRouter(prefix="/api", tags=["public"])
 
-@public_router.get("/months", response_model=List[Month])
+@public_router.get("/months", response_model=List[MonthSchema])
 def read_months(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     months = get_months(db, skip=skip, limit=limit)
     return months
 
-@public_router.get("/months/{month_id}", response_model=Month)
+@public_router.get("/months/{month_id}", response_model=MonthSchema)
 def read_month(month_id: int, db: Session = Depends(get_db)):
     return get_month(db, month_id=month_id)
 
-@public_router.get("/months/{month_id}/days/{day}", response_model=List[Event])
+@public_router.get("/months/{month_id}/days/{day}", response_model=List[EventSchema])
 def read_events_by_date_route(month_id: int, day: str, db: Session = Depends(get_db)):
     return get_events_by_date(db, month_id=month_id, day=day)
 
@@ -364,23 +364,23 @@ app.include_router(public_router)
 # 3. Admin Router
 admin_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(get_current_user)])
 
-@admin_router.post("/months/", response_model=Month)
+@admin_router.post("/months/", response_model=MonthSchema)
 def create_month_route(month: MonthCreate, db: Session = Depends(get_db)):
     return create_month_db(db=db, month=month)
 
-@admin_router.delete("/months/{month_id}", response_model=Month)
+@admin_router.delete("/months/{month_id}", response_model=MonthSchema)
 def delete_month_route(month_id: int, db: Session = Depends(get_db)):
     return delete_month_db(db=db, month_id=month_id)
 
-@admin_router.put("/months/{month_id}", response_model=Month)
+@admin_router.put("/months/{month_id}", response_model=MonthSchema)
 def update_month_route(month_id: int, month: MonthBase, db: Session = Depends(get_db)):
     return update_month_db(db=db, month_id=month_id, month=month)
 
-@admin_router.post("/months/{month_id}/events/", response_model=Event)
+@admin_router.post("/months/{month_id}/events/", response_model=EventSchema)
 def create_event_route(month_id: int, event: EventCreate, db: Session = Depends(get_db)):
     return create_event_db(db=db, month_id=month_id, event=event)
 
-@admin_router.delete("/events/{event_id}", response_model=Event)
+@admin_router.delete("/events/{event_id}", response_model=EventSchema)
 def delete_event_route(event_id: int, db: Session = Depends(get_db)):
     return delete_event_db(db=db, event_id=event_id)
 
@@ -477,7 +477,10 @@ def startup_event():
         Base.metadata.create_all(bind=engine)
         
         # Check if we have any data
-        if db.query(Month).count() == 0:
+        # In SQLAlchemy 1.4/2.0, query(Model) should work if Model is a class
+        # The error suggests Month might not be recognized as a mapped class or similar
+        # Let's try select(Month) style or just ensure it's correct
+        if db.query(Month).first() is None:
             print("Seeding database...")
             # Use absolute path relative to this file
             base_dir = os.path.dirname(os.path.abspath(__file__))
