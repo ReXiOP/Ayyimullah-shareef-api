@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}{{ month.month_en }} - Ayyimullah Shareef Admin{% endblock %}
+
+{% block content %}
+<div class="md:flex md:items-center md:justify-between">
+    <div class="min-w-0 flex-1">
+        <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:truncate sm:text-3xl sm:tracking-tight">{{ month.month_bn }} / {{ month.month_en }}</h2>
+    </div>
+    <div class="mt-4 flex md:mt-0 md:ml-4">
+        <button onclick="document.getElementById('edit-month-modal').classList.remove('hidden')" class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
+            Edit Month
+        </button>
+        <button onclick="document.getElementById('add-event-modal').classList.remove('hidden')" class="ml-3 inline-flex items-center rounded-md border border-transparent bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
+            Add Event
+        </button>
+        <a href="/dashboard" class="ml-3 inline-flex items-center rounded-md border border-transparent bg-gray-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+            Back
+        </a>
+    </div>
+</div>
+
+<div class="mt-8 space-y-6">
+    {% for event in month.events %}
+    <div class="bg-white shadow sm:rounded-lg overflow-hidden border border-gray-100 transition-all hover:shadow-md">
+        <div class="px-4 py-5 sm:px-6 flex justify-between items-center bg-gray-50 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">Day: <span class="text-primary-600 font-bold">{{ event.day }}</span></h3>
+            <button onclick="deleteEvent({{ event.id }})" class="text-sm font-medium text-red-600 hover:text-red-500 transition-colors">Delete Event</button>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <ul class="space-y-3">
+                {% for detail in event.details %}
+                <li class="flex items-start group">
+                    <div class="flex-shrink-0 h-5 w-5 relative top-1">
+                        <svg class="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <span class="ml-3 text-gray-700 flex-grow">{{ detail.detail }}</span>
+                    <button onclick="deleteDetail({{ detail.id }})" class="ml-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </li>
+                {% endfor %}
+            </ul>
+            <div class="mt-6 pt-4 border-t border-gray-100">
+                <form onsubmit="addDetail(event, {{ event.id }})" class="flex gap-3">
+                    <input type="text" name="detail" placeholder="Add new detail..." required class="block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm border p-2">
+                    <button type="submit" class="inline-flex items-center rounded-md border border-transparent bg-primary-100 px-3 py-2 text-sm font-medium text-primary-700 hover:bg-primary-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
+                        Add
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Edit Month Modal -->
+<div id="edit-month-modal" class="relative z-10 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity backdrop-blur-sm"></div>
+    <div class="fixed inset-0 z-10 overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div class="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                <h3 class="text-lg font-medium leading-6 text-gray-900">Edit Month</h3>
+                <form id="edit-month-form" class="mt-4 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Bangla Name</label>
+                        <input type="text" name="month_bn" value="{{ month.month_bn }}" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm border p-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">English Name</label>
+                        <input type="text" name="month_en" value="{{ month.month_en }}" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm border p-2">
+                    </div>
+                    <div class="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
+                        <button type="submit" class="inline-flex w-full justify-center rounded-md border border-transparent bg-primary-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 sm:col-start-2 sm:text-sm">Update</button>
+                        <button type="button" onclick="document.getElementById('edit-month-modal').classList.add('hidden')" class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 sm:col-start-1 sm:mt-0 sm:text-sm">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Event Modal -->
+<div id="add-event-modal" class="relative z-10 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity backdrop-blur-sm"></div>
+    <div class="fixed inset-0 z-10 overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div class="relative transform overflow-hidden rounded-lg bg-white px-4 pt-5 pb-4 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                <h3 class="text-lg font-medium leading-6 text-gray-900">Add Event</h3>
+                <form id="add-event-form" class="mt-4 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Day</label>
+                        <input type="text" name="day" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm border p-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Initial Detail</label>
+                        <input type="text" name="detail" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm border p-2">
+                    </div>
+                    <div class="mt-5 sm:mt-6 sm:grid sm:grid-flow-row-dense sm:grid-cols-2 sm:gap-3">
+                        <button type="submit" class="inline-flex w-full justify-center rounded-md border border-transparent bg-primary-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 sm:col-start-2 sm:text-sm">Create</button>
+                        <button type="button" onclick="document.getElementById('add-event-modal').classList.add('hidden')" class="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 sm:col-start-1 sm:mt-0 sm:text-sm">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function getToken() {
+        return getCookie('access_token').replace('Bearer ', '');
+    }
+    
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+    }
+
+    async function deleteEvent(id) {
+        if(!confirm('Delete event?')) return;
+        const response = await fetch(`/admin/events/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        if(response.ok) window.location.reload();
+    }
+
+    async function deleteDetail(id) {
+        if(!confirm('Delete detail?')) return;
+        const response = await fetch(`/admin/details/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        if(response.ok) window.location.reload();
+    }
+
+    async function addDetail(e, eventId) {
+        e.preventDefault();
+        const input = e.target.querySelector('input[name="detail"]');
+        const detail = input.value;
+        
+        const response = await fetch(`/admin/events/${eventId}/details/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getToken()}`
+            },
+            body: JSON.stringify({ detail: detail })
+        });
+        
+        if(response.ok) window.location.reload();
+    }
+
+    document.getElementById('edit-month-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = {
+            month_bn: formData.get('month_bn'),
+            month_en: formData.get('month_en')
+        };
+        
+        const response = await fetch(`/admin/months/{{ month.id }}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getToken()}`
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if(response.ok) window.location.reload();
+    };
+
+    document.getElementById('add-event-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = {
+            day: formData.get('day'),
+            details: [formData.get('detail')]
+        };
+        
+        const response = await fetch(`/admin/months/{{ month.id }}/events/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getToken()}`
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if(response.ok) window.location.reload();
+    };
+</script>
+{% endblock %}
