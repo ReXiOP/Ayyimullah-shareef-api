@@ -10,11 +10,12 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+# SQLALchemy Imports
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text
-# NOTE: Removed 'or_' from import as it wasn't used, but kept other imports
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 
+# Security & Schema Imports
 from pydantic import BaseModel
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -28,10 +29,10 @@ load_dotenv()
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # --- Database Setup ---
-# Use DATABASE_URL from env if available (for Vercel/Postgres), otherwise fallback to SQLite
+# Use DATABASE_URL from env (Postgres) or fall back to SQLite (for local testing)
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
-# Handle special case for Postgres URL starting with "postgres://" (SQLAlchemy needs "postgresql://")
+# Handle special case for Postgres URL starting with "postgres://"
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -53,13 +54,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-# --- Models, Schemas, Auth Logic, and CRUD Operations (All unchanged) ---
-# ... (Your existing code for User, Month, EventDetail, Event models) ...
-# ... (Your existing code for Pydantic Schemas) ...
-# ... (Your existing code for Auth Logic, including SECRET_KEY setup) ...
-# ... (Your existing code for CRUD Operations) ...
-# NOTE: All these sections are identical to your provided code.
 
 # --- Models ---
 class User(Base):
@@ -100,7 +94,6 @@ class EventDetailCreate(EventDetailBase):
 class EventDetail(EventDetailBase):
     id: int
     event_id: int
-
     class Config:
         from_attributes = True
 
@@ -114,7 +107,6 @@ class EventSchema(EventBase):
     id: int
     month_id: int
     details: List[EventDetail] = []
-
     class Config:
         from_attributes = True
 
@@ -128,7 +120,6 @@ class MonthCreate(MonthBase):
 class MonthSchema(MonthBase):
     id: int
     events: List[EventSchema] = []
-
     class Config:
         from_attributes = True
 
@@ -140,7 +131,6 @@ class UserCreate(UserBase):
 
 class UserSchema(UserBase):
     id: int
-
     class Config:
         from_attributes = True
 
@@ -152,7 +142,6 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 # --- Auth Logic ---
-# SECRET_KEY should be in env variables in production
 SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -304,25 +293,23 @@ def get_events_by_date(db: Session, month_id: int, day: str):
     return []
 
 def search_details(db: Session, query: str):
-    # NOTE: Using a simple ILIKE search might be slow on very large databases
     return db.query(EventDetail).filter(EventDetail.detail.ilike(f"%{query}%")).all()
 
 # --- App Initialization ---
 app = FastAPI(title="Ayyimullah Shareef API")
 
-# Mount static files
+# Mount static files (using absolute path)
 static_dir = os.path.join(base_dir, "api", "static")
 if not os.path.exists(static_dir):
     # This might happen in a build step where directories aren't created
     os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Fix template directory for Vercel
+# Initialize Jinja2 Templates (using absolute path)
 templates_dir = os.path.join(base_dir, "api", "templates")
 templates = Jinja2Templates(directory=templates_dir)
 
-# --- Routers (All unchanged) ---
-# ... (Your existing code for auth_router, public_router, admin_router, dashboard_router) ...
+# --- Routers ---
 
 # 1. Auth Router
 auth_router = APIRouter(tags=["authentication"])
@@ -420,7 +407,6 @@ app.include_router(admin_router)
 dashboard_router = APIRouter(include_in_schema=False)
 
 def get_current_user_from_cookie(request: Request, db: Session = Depends(get_db)):
-    # Same logic as provided - relies on token decoding
     token = request.cookies.get("access_token")
     if not token:
         return None
@@ -452,8 +438,7 @@ async def login_submit(request: Request, db: Session = Depends(get_db)):
     
     access_token = create_access_token(data={"sub": user.username})
     response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
-    # NOTE: Set SameSite="Lax" or "Strict" for better security, though Vercel is often fine with default.
-    response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True) 
+    response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
     return response
 
 @dashboard_router.get("/logout")
@@ -479,35 +464,33 @@ async def month_detail_dashboard(request: Request, month_id: int, db: Session = 
     
     month = get_month(db, month_id)
     if not month:
-        # Better error handling for the user on dashboard
-        return templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "error": f"Month ID {month_id} not found."})
+        # Redirect to dashboard with a generic message, or handle 404
+        return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
         
     return templates.TemplateResponse("month_detail.html", {"request": request, "user": user, "month": month})
 
 @dashboard_router.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    return RedirectResponse(url="/dashboard")
+    # Check for authenticated user and redirect to dashboard, or login
+    user = get_current_user_from_cookie(request, SessionLocal()) # Use SessionLocal for sync context
+    if user:
+        return RedirectResponse(url="/dashboard")
+    return RedirectResponse(url="/login")
 
 app.include_router(dashboard_router)
 
-# --- Startup Event ---
+# --- Startup Event (CRITICAL for Vercel) ---
 @app.on_event("startup")
 def startup_event():
-    # Only create tables if the database URL is not a local file (e.g., Postgres/remote DB)
-    is_remote_db = not SQLALCHEMY_DATABASE_URL.startswith("sqlite")
-    
-    # 1. Ensure tables exist
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception as e:
-        print(f"ERROR: Could not create tables. Is the remote database accessible? Error: {e}")
-        # In Vercel, if the DB is down, we still want the app to start, but data access will fail.
-        # We don't re-raise the error here.
-
-    # 2. Seed data and create admin user
     db = SessionLocal()
     try:
-        # Check if we have any data (This query might fail if the DB connection is bad, but that's handled above)
+        print("--- Starting Database Initialization ---")
+        
+        # 1. Create tables on startup
+        Base.metadata.create_all(bind=engine)
+        print("Tables created successfully.")
+        
+        # 2. Seed data and create admin user
         if db.query(Month).first() is None:
             print("Seeding database...")
             
@@ -515,41 +498,43 @@ def startup_event():
             file_path = os.path.join(base_dir, "file.json")
             
             if not os.path.exists(file_path):
-                print(f"File {file_path} not found. Ensure 'file.json' is in the project root.")
-                return
-            
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                # If file is missing, print error but DON'T crash startup
+                print(f"WARNING: Data file {file_path} not found. Skipping seeding.")
+            else:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    
+                calendar_data = data.get("Aiyamullah_Shareef_Calendar", [])
                 
-            calendar_data = data.get("Aiyamullah_Shareef_Calendar", [])
+                for month_data in calendar_data:
+                    events = []
+                    for event_data in month_data.get("events", []):
+                        details = event_data.get("details", [])
+                        events.append(EventCreate(day=event_data["day"], details=details))
+                    
+                    month_create = MonthCreate(
+                        month_bn=month_data["month_bn"],
+                        month_en=month_data["month_en"],
+                        events=events
+                    )
+                    create_month_db(db, month_create)
+                print("Data seeded successfully.")
+        
+        # 3. Create default admin user
+        admin_username = os.getenv("ADMIN_USERNAME", "admin")
+        admin_password = os.getenv("ADMIN_PASSWORD", "password123")
+        
+        if not get_user_by_username(db, admin_username):
+            create_user_db(db, UserCreate(username=admin_username, password=admin_password))
+            print(f"Created default admin user: {admin_username} / {admin_password}")
             
-            for month_data in calendar_data:
-                events = []
-                for event_data in month_data.get("events", []):
-                    details = event_data.get("details", [])
-                    events.append(EventCreate(day=event_data["day"], details=details))
-                
-                month_create = MonthCreate(
-                    month_bn=month_data["month_bn"],
-                    month_en=month_data["month_en"],
-                    events=events
-                )
-                create_month_db(db, month_create)
-            
-            # Create default admin user
-            admin_username = os.getenv("ADMIN_USERNAME", "admin")
-            admin_password = os.getenv("ADMIN_PASSWORD", "password123")
-            
-            if not get_user_by_username(db, admin_username):
-                create_user_db(db, UserCreate(username=admin_username, password=admin_password))
-                print(f"Created default admin user: {admin_username} / {admin_password}")
-                
-            print("Database seeded successfully.")
     except Exception as e:
-        print(f"ERROR during database seeding/user creation: {e}")
+        # Log the critical error and re-raise it to ensure Vercel logs the failure
+        print(f"FATAL STARTUP ERROR: Database or Initialization Failure: {e}", file=sys.stderr)
+        raise # Reraise the exception to trigger Vercel's detailed error logging
     finally:
         db.close()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app)
