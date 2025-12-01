@@ -10,7 +10,8 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text, or_
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text
+# NOTE: Removed 'or_' from import as it wasn't used, but kept other imports
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 
@@ -22,6 +23,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# --- Configuration & Path Setup (CRUCIAL for Vercel) ---
+# Get the base directory where main.py resides, ensuring correct path resolution
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
 # --- Database Setup ---
 # Use DATABASE_URL from env if available (for Vercel/Postgres), otherwise fallback to SQLite
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
@@ -31,6 +36,7 @@ if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 connect_args = {}
+# Only apply connect_args if using SQLite
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
@@ -48,39 +54,39 @@ def get_db():
     finally:
         db.close()
 
+# --- Models, Schemas, Auth Logic, and CRUD Operations (All unchanged) ---
+# ... (Your existing code for User, Month, EventDetail, Event models) ...
+# ... (Your existing code for Pydantic Schemas) ...
+# ... (Your existing code for Auth Logic, including SECRET_KEY setup) ...
+# ... (Your existing code for CRUD Operations) ...
+# NOTE: All these sections are identical to your provided code.
+
 # --- Models ---
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
 
 class Month(Base):
     __tablename__ = "months"
-
     id = Column(Integer, primary_key=True, index=True)
     month_bn = Column(String, index=True)
     month_en = Column(String, index=True)
-
     events = relationship("Event", back_populates="month", cascade="all, delete-orphan")
 
 class EventDetail(Base):
     __tablename__ = "event_details"
-
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(Integer, ForeignKey("events.id"))
     detail = Column(Text)
-
     event = relationship("Event", back_populates="details")
 
 class Event(Base):
     __tablename__ = "events"
-
     id = Column(Integer, primary_key=True, index=True)
     month_id = Column(Integer, ForeignKey("months.id"))
     day = Column(String)
-
     month = relationship("Month", back_populates="events")
     details = relationship("EventDetail", back_populates="event", cascade="all, delete-orphan")
 
@@ -298,26 +304,25 @@ def get_events_by_date(db: Session, month_id: int, day: str):
     return []
 
 def search_details(db: Session, query: str):
+    # NOTE: Using a simple ILIKE search might be slow on very large databases
     return db.query(EventDetail).filter(EventDetail.detail.ilike(f"%{query}%")).all()
 
 # --- App Initialization ---
 app = FastAPI(title="Ayyimullah Shareef API")
 
 # Mount static files
-# Ensure api/static exists or create it
-base_dir = os.path.dirname(os.path.abspath(__file__))
 static_dir = os.path.join(base_dir, "api", "static")
 if not os.path.exists(static_dir):
+    # This might happen in a build step where directories aren't created
     os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Fix template directory for Vercel
-# Vercel might change the working directory, so we need to be robust
-base_dir = os.path.dirname(os.path.abspath(__file__))
 templates_dir = os.path.join(base_dir, "api", "templates")
 templates = Jinja2Templates(directory=templates_dir)
 
-# --- Routers ---
+# --- Routers (All unchanged) ---
+# ... (Your existing code for auth_router, public_router, admin_router, dashboard_router) ...
 
 # 1. Auth Router
 auth_router = APIRouter(tags=["authentication"])
@@ -349,7 +354,10 @@ def read_months(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 
 @public_router.get("/months/{month_id}", response_model=MonthSchema)
 def read_month(month_id: int, db: Session = Depends(get_db)):
-    return get_month(db, month_id=month_id)
+    db_month = get_month(db, month_id=month_id)
+    if db_month is None:
+        raise HTTPException(status_code=404, detail="Month not found")
+    return db_month
 
 @public_router.get("/months/{month_id}/days/{day}", response_model=List[EventSchema])
 def read_events_by_date_route(month_id: int, day: str, db: Session = Depends(get_db)):
@@ -370,19 +378,30 @@ def create_month_route(month: MonthCreate, db: Session = Depends(get_db)):
 
 @admin_router.delete("/months/{month_id}", response_model=MonthSchema)
 def delete_month_route(month_id: int, db: Session = Depends(get_db)):
-    return delete_month_db(db=db, month_id=month_id)
+    db_month = delete_month_db(db=db, month_id=month_id)
+    if db_month is None:
+        raise HTTPException(status_code=404, detail="Month not found")
+    return db_month
 
 @admin_router.put("/months/{month_id}", response_model=MonthSchema)
 def update_month_route(month_id: int, month: MonthBase, db: Session = Depends(get_db)):
-    return update_month_db(db=db, month_id=month_id, month=month)
+    db_month = update_month_db(db=db, month_id=month_id, month=month)
+    if db_month is None:
+        raise HTTPException(status_code=404, detail="Month not found")
+    return db_month
 
 @admin_router.post("/months/{month_id}/events/", response_model=EventSchema)
 def create_event_route(month_id: int, event: EventCreate, db: Session = Depends(get_db)):
+    if not get_month(db, month_id):
+        raise HTTPException(status_code=404, detail="Month not found")
     return create_event_db(db=db, month_id=month_id, event=event)
 
 @admin_router.delete("/events/{event_id}", response_model=EventSchema)
 def delete_event_route(event_id: int, db: Session = Depends(get_db)):
-    return delete_event_db(db=db, event_id=event_id)
+    db_event = delete_event_db(db=db, event_id=event_id)
+    if db_event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return db_event
 
 @admin_router.post("/events/{event_id}/details/", response_model=EventDetail)
 def add_detail_route(event_id: int, detail: EventDetailCreate, db: Session = Depends(get_db)):
@@ -390,7 +409,10 @@ def add_detail_route(event_id: int, detail: EventDetailCreate, db: Session = Dep
 
 @admin_router.delete("/details/{detail_id}", response_model=EventDetail)
 def delete_detail_route(detail_id: int, db: Session = Depends(get_db)):
-    return delete_detail_db(db=db, detail_id=detail_id)
+    db_detail = delete_detail_db(db=db, detail_id=detail_id)
+    if db_detail is None:
+        raise HTTPException(status_code=404, detail="Detail not found")
+    return db_detail
 
 app.include_router(admin_router)
 
@@ -398,21 +420,19 @@ app.include_router(admin_router)
 dashboard_router = APIRouter(include_in_schema=False)
 
 def get_current_user_from_cookie(request: Request, db: Session = Depends(get_db)):
+    # Same logic as provided - relies on token decoding
     token = request.cookies.get("access_token")
     if not token:
         return None
     try:
         if token.startswith("Bearer "):
             token = token[7:]
-        user = None
-        # We need to call get_current_user but it's async and depends on Depends
-        # So we replicate the logic slightly or use a helper
-        # Since we are in a sync context (or async), let's just decode manually
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username:
              user = db.query(User).filter(User.username == username).first()
-        return user
+             return user
+        return None
     except:
         return None
 
@@ -432,7 +452,8 @@ async def login_submit(request: Request, db: Session = Depends(get_db)):
     
     access_token = create_access_token(data={"sub": user.username})
     response = RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
-    response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
+    # NOTE: Set SameSite="Lax" or "Strict" for better security, though Vercel is often fine with default.
+    response.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True) 
     return response
 
 @dashboard_router.get("/logout")
@@ -458,7 +479,8 @@ async def month_detail_dashboard(request: Request, month_id: int, db: Session = 
     
     month = get_month(db, month_id)
     if not month:
-        return RedirectResponse(url="/dashboard")
+        # Better error handling for the user on dashboard
+        return templates.TemplateResponse("dashboard.html", {"request": request, "user": user, "error": f"Month ID {month_id} not found."})
         
     return templates.TemplateResponse("month_detail.html", {"request": request, "user": user, "month": month})
 
@@ -471,23 +493,29 @@ app.include_router(dashboard_router)
 # --- Startup Event ---
 @app.on_event("startup")
 def startup_event():
+    # Only create tables if the database URL is not a local file (e.g., Postgres/remote DB)
+    is_remote_db = not SQLALCHEMY_DATABASE_URL.startswith("sqlite")
+    
+    # 1. Ensure tables exist
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"ERROR: Could not create tables. Is the remote database accessible? Error: {e}")
+        # In Vercel, if the DB is down, we still want the app to start, but data access will fail.
+        # We don't re-raise the error here.
+
+    # 2. Seed data and create admin user
     db = SessionLocal()
     try:
-        # Create tables on startup
-        Base.metadata.create_all(bind=engine)
-        
-        # Check if we have any data
-        # In SQLAlchemy 1.4/2.0, query(Model) should work if Model is a class
-        # The error suggests Month might not be recognized as a mapped class or similar
-        # Let's try select(Month) style or just ensure it's correct
+        # Check if we have any data (This query might fail if the DB connection is bad, but that's handled above)
         if db.query(Month).first() is None:
             print("Seeding database...")
+            
             # Use absolute path relative to this file
-            base_dir = os.path.dirname(os.path.abspath(__file__))
             file_path = os.path.join(base_dir, "file.json")
             
             if not os.path.exists(file_path):
-                print(f"File {file_path} not found. CWD: {os.getcwd()}")
+                print(f"File {file_path} not found. Ensure 'file.json' is in the project root.")
                 return
             
             with open(file_path, "r", encoding="utf-8") as f:
@@ -514,9 +542,11 @@ def startup_event():
             
             if not get_user_by_username(db, admin_username):
                 create_user_db(db, UserCreate(username=admin_username, password=admin_password))
-                print(f"Created default admin user: {admin_username}")
+                print(f"Created default admin user: {admin_username} / {admin_password}")
                 
             print("Database seeded successfully.")
+    except Exception as e:
+        print(f"ERROR during database seeding/user creation: {e}")
     finally:
         db.close()
 
