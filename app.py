@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
+from sqlalchemy.exc import OperationalError # Import for specific DB error handling
 
 # Security & Schema Imports
 from pydantic import BaseModel
@@ -24,20 +25,16 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# --- Configuration & Path Setup (CRUCIAL for Vercel) ---
-# Get the base directory where main.py resides, ensuring correct path resolution
+# --- Configuration & Path Setup ---
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # --- Database Setup ---
-# Use DATABASE_URL from env (Postgres) or fall back to SQLite (for local testing)
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
-# Handle special case for Postgres URL starting with "postgres://"
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 connect_args = {}
-# Only apply connect_args if using SQLite
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
@@ -293,22 +290,6 @@ def get_events_by_date(db: Session, month_id: int, day: str):
     return []
 
 def search_details(db: Session, query: str):
-    return db.query(EventDetail).filter(EventDetail.detail.ilike(f"%{query}%")).all()
-
-# --- App Initialization ---
-app = FastAPI(title="Ayyimullah Shareef API")
-
-# Mount static files (using absolute path)
-static_dir = os.path.join(base_dir, "api", "static")
-if not os.path.exists(static_dir):
-    # This might happen in a build step where directories aren't created
-    os.makedirs(static_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-# Initialize Jinja2 Templates (using absolute path)
-templates_dir = os.path.join(base_dir, "api", "templates")
-templates = Jinja2Templates(directory=templates_dir)
-
 # --- Routers ---
 
 # 1. Auth Router
@@ -464,22 +445,23 @@ async def month_detail_dashboard(request: Request, month_id: int, db: Session = 
     
     month = get_month(db, month_id)
     if not month:
-        # Redirect to dashboard with a generic message, or handle 404
         return RedirectResponse(url="/dashboard", status_code=status.HTTP_303_SEE_OTHER)
         
     return templates.TemplateResponse("month_detail.html", {"request": request, "user": user, "month": month})
 
 @dashboard_router.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    # Check for authenticated user and redirect to dashboard, or login
-    user = get_current_user_from_cookie(request, SessionLocal()) # Use SessionLocal for sync context
+    # Use SessionLocal for sync context outside of a dependency injection
+    db = SessionLocal()
+    user = get_current_user_from_cookie(request, db)
+    db.close()
     if user:
         return RedirectResponse(url="/dashboard")
     return RedirectResponse(url="/login")
 
 app.include_router(dashboard_router)
 
-# --- Startup Event (CRITICAL for Vercel) ---
+# --- Startup Event (VERCEL DEBUGGING AND INITIALIZATION) ---
 @app.on_event("startup")
 def startup_event():
     db = SessionLocal()
@@ -494,11 +476,9 @@ def startup_event():
         if db.query(Month).first() is None:
             print("Seeding database...")
             
-            # Use absolute path relative to this file
             file_path = os.path.join(base_dir, "file.json")
             
             if not os.path.exists(file_path):
-                # If file is missing, print error but DON'T crash startup
                 print(f"WARNING: Data file {file_path} not found. Skipping seeding.")
             else:
                 with open(file_path, "r", encoding="utf-8") as f:
@@ -528,13 +508,22 @@ def startup_event():
             create_user_db(db, UserCreate(username=admin_username, password=admin_password))
             print(f"Created default admin user: {admin_username} / {admin_password}")
             
+    except OperationalError as e:
+        # Catch the specific database connection error for better logging
+        print(f"\n--- FATAL DATABASE CONNECTION ERROR ---\n", file=sys.stderr)
+        print(f"Check your DATABASE_URL, password, and firewall settings.", file=sys.stderr)
+        print(f"SQLAlchemy OperationalError: {e.orig}", file=sys.stderr)
+        print(f"-----------------------------------------\n", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        # Log the critical error and re-raise it to ensure Vercel logs the failure
-        print(f"FATAL STARTUP ERROR: Database or Initialization Failure: {e}", file=sys.stderr)
-        raise # Reraise the exception to trigger Vercel's detailed error logging
+        # Catch all other startup errors
+        print(f"\n--- FATAL STARTUP ERROR (Non-DB) ---\n", file=sys.stderr)
+        print(f"Generic Initialization Failure: {e}", file=sys.stderr)
+        print(f"--------------------------------------\n", file=sys.stderr)
+        sys.exit(1)
     finally:
         db.close()
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
